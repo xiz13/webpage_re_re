@@ -33,29 +33,41 @@ html, body, .stApp {{
   content: "";
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(255,255,255,0.6);
+  background: rgba(255,255,255,0.4);
   z-index: -1;
+}}
+
+/* Main content card */
+.block-container {{
+  background: rgba(255,255,255,0.95);
+  padding: 2rem !important;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+  color: #000 !important;
 }}
 
 /* Sidebar filter card */
 [data-testid="stSidebar"] > div:first-child {{
   backdrop-filter: blur(10px);
-  background: rgba(255,255,255,0.4);
+  background: rgba(255,255,255,0.8);
   padding: 20px;
   border-radius: 12px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.1);
   margin: 16px;
 }}
 
-/* Filter input styling */
-.stSidebar select, .stSidebar .stSlider, .stSidebar .stMultiSelect {{
-  border-radius: 6px !important;
-  background: #fff !important;
+/* Sidebar text and inputs */
+[data-testid="stSidebar"] .stText, 
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] .stSelectbox, 
+[data-testid="stSidebar"] .stSlider,
+[data-testid="stSidebar"] .stMultiSelect {{
+  color: #000 !important;
 }}
 
-/* Headings */
-h1, h2, h3, h4, h5, h6 {{
-  color: #333;
+/* Headings and metrics */
+h1, h2, h3, h4, h5, h6, .stMetric-value {{
+  color: #000 !important;
 }}
 
 /* Badges */
@@ -65,7 +77,7 @@ h1, h2, h3, h4, h5, h6 {{
   color:#fff;
   border-radius:12px;
   padding:4px 10px;
-  margin:3px 3px 3px 0;
+  margin:3px;
   font-size:0.9rem;
 }}
 
@@ -94,13 +106,11 @@ h1, h2, h3, h4, h5, h6 {{
 
 # ───── DATA LOAD ─────
 DATA_URL = "https://drive.google.com/uc?export=download&id=1iRWeGaDybybQ2eiTCyEgyXDYbH5FpFup"
-
 @st.cache_data
 def load_data(url: str) -> pd.DataFrame:
-    res = requests.get(url, timeout=60)
-    res.raise_for_status()
-    return pd.read_csv(BytesIO(res.content))
-
+    r = requests.get(url, timeout=60)
+    r.raise_for_status()
+    return pd.read_csv(BytesIO(r.content))
 df_raw = load_data(DATA_URL)
 
 # ───── MODEL TRAINING ─────
@@ -109,7 +119,7 @@ def train_model(df: pd.DataFrame) -> pd.DataFrame:
     df = df.dropna(subset=["google_rating","price","popularity","sentiment"])
     num_feats = ["price","popularity","sentiment"]
     cat_feats = ["category"]
-    X, y = df[num_feats+cat_feats], df["google_rating"]
+    X, y = df[num_feats + cat_feats], df["google_rating"]
 
     prep = ColumnTransformer([
         ("num", StandardScaler(), num_feats),
@@ -221,3 +231,4 @@ if raw:
         st.markdown(f"<div class='snippet-card'>“{snippet}”</div>", unsafe_allow_html=True)
 else:
     st.info("No reviews to display.")
+
