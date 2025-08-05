@@ -31,14 +31,51 @@ html, body, .stApp {{
   background: rgba(255,255,255,0.4); z-index: -1;
 }}
 .block-container {{
-  background: rgba(255,255,255,0.95); border-radius:12px;
-  padding:2rem !important; box-shadow:0 4px 20px rgba(0,0,0,0.1);
+  background: rgba(255,255,255,0.95);
+  border-radius:12px; padding:2rem !important;
+  box-shadow:0 4px 20px rgba(0,0,0,0.1);
 }}
-.stSidebar label {{ font-weight:600; margin-top:12px; }}
+/* Sidebar header gradient */
+[data-testid="stSidebar"] > div:first-child::before {{
+  content:"Filters";
+  display:block;
+  font-size:1.5rem;
+  font-weight:700;
+  text-align:center;
+  padding:12px;
+  margin: -16px -16px 16px -16px;
+  background: linear-gradient(90deg, #ff8a65, #ffb74d);
+  color:#fff;
+  border-top-left-radius:12px;
+  border-top-right-radius:12px;
+}}
+/* Reset button pill */
+.reset-btn {{
+  display:block; text-align:center;
+  background:#ff7043; color:#fff;
+  padding:8px 0; border-radius:20px;
+  font-weight:600; margin:12px auto 24px;
+  width:80%;
+  cursor:pointer;
+}}
+/* Expander card style */
+.stExpander > div {{
+  background:#fff; border-radius:8px; padding:12px 16px;
+  margin-bottom:12px; box-shadow:0 2px 8px rgba(0,0,0,0.05);
+}}
+/* Expander summary pill */
+.stExpanderSummary {{
+  background:#ff8a65; color:#fff;
+  padding:6px 12px; border-radius:12px;
+  font-weight:600; margin-bottom:8px;
+}}
+/* Selectbox & multiselect pills */
+.stSelectbox select, .stMultiSelect select, .stSlider > div {{
+  border-radius:20px !important;
+}}
 .badge {{
   display:inline-block; background:#ffb300; color:#fff;
-  border-radius:12px; padding:4px 10px; margin:3px;
-  font-size:0.9rem;
+  border-radius:12px; padding:4px 10px; margin:3px; font-size:0.9rem;
 }}
 .snippet-card {{
   background:#fff; border-left:4px solid #43a047;
@@ -86,46 +123,29 @@ def train_model(df):
 
 df = train_model(df_raw)
 
-# ───── BEAUTIFIED FILTERS ─────
+# ───── BEAUTIFUL FILTERS ─────
 with st.sidebar:
-    # Reliable banner via Streamlit image
-    st.image("https://img.icons8.com/emoji/96/000000/chef-emoji.png", width=80)
-    st.header("Filters")
-    if st.button("🔄 Reset Filters"):
+    # Reset button
+    if st.button("🔄 Reset Filters", key="reset", help="Clear all selections"):
         st.session_state.clear()
-
+    # City
     with st.expander("🌆 City"):
-        if "city" in df:
-            cities = ["All"] + sorted(df["city"].dropna().unique())
-            sel_city = st.selectbox("Select City", cities)
-        else:
-            sel_city = "All"
-
+        sel_city = st.selectbox("Select City", ["All"]+sorted(df["city"].dropna().unique()))
+    # ZIP
     with st.expander("🏷️ ZIP Code"):
-        if "postal_code" in df:
-            zips = ["All"] + sorted(df["postal_code"].dropna().unique())
-            sel_zip = st.selectbox("Select ZIP", zips)
-        else:
-            sel_zip = "All"
-
+        sel_zip = st.selectbox("Select ZIP", ["All"]+sorted(df["postal_code"].dropna().unique()))
+    # Category
     with st.expander("📂 Category"):
-        if "category" in df:
-            cats = sorted(df["category"].dropna().unique())
-            sel_cats = st.multiselect("Select Categories", cats)
-        else:
-            sel_cats = []
-
+        sel_cats = st.multiselect("Choose Categories", sorted(df["category"].dropna().unique()))
+    # Price
     with st.expander("💸 Price Level"):
-        pr = st.slider("Price (1–10)", 1, 10, (1, 10))
+        pr = st.slider("Price (1–10)", 1, 10, (1,10))
 
-# Apply filters
+# ───── APPLY FILTERS ─────
 df_f = df.copy()
-if sel_city != "All":
-    df_f = df_f[df_f["city"] == sel_city]
-if sel_zip != "All":
-    df_f = df_f[df_f["postal_code"] == sel_zip]
-if sel_cats:
-    df_f = df_f[df_f["category"].isin(sel_cats)]
+if sel_city != "All": df_f = df_f[df_f["city"]==sel_city]
+if sel_zip  != "All": df_f = df_f[df_f["postal_code"]==sel_zip]
+if sel_cats:         df_f = df_f[df_f["category"].isin(sel_cats)]
 df_f = df_f[df_f["price"].between(pr[0], pr[1])]
 
 # ───── TOP 5 & METRICS ─────
@@ -133,7 +153,7 @@ df_f = df_f.sort_values("predicted_rating", ascending=False)
 top5 = df_f.head(5).reset_index(drop=True)
 
 st.title("🍴 Top 5 Restaurants by Predicted Rating")
-c1, c2, c3 = st.columns(3)
+c1,c2,c3 = st.columns(3)
 c1.metric("Matches", len(df_f))
 c2.metric("Avg Predicted Rating", f"{df_f['predicted_rating'].mean():.2f}")
 c3.metric("Avg Sentiment", f"{df_f['sentiment'].mean():.2f}")
@@ -143,7 +163,7 @@ names = [""] + list(top5["name"])
 sel = st.selectbox("Select a restaurant", names)
 if not sel:
     st.info("Please select a restaurant."); st.stop()
-r = top5[top5["name"] == sel].iloc[0]
+r = top5[top5["name"]==sel].iloc[0]
 
 st.subheader(f"{sel}")
 st.metric("Predicted Rating", f"{r['predicted_rating']} ⭐")
@@ -156,7 +176,7 @@ if {"latitude","longitude"}.issubset(r.index):
     view = pdk.ViewState(latitude=r["latitude"], longitude=r["longitude"], zoom=14)
     clr = [
         int(255*(1-(r['predicted_rating']-1)/4)),
-        int(120+135*(r['predicted_rating']-1)/4),200,180
+        int(120+135*(r['predicted_rating']-1)/4), 200, 180
     ]
     layer = pdk.Layer("ScatterplotLayer", data=pd.DataFrame([r]),
                       get_position='[longitude, latitude]',
