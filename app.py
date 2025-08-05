@@ -15,7 +15,7 @@ from sklearn.metrics import mean_squared_error
 from sklearn.feature_extraction.text import TfidfVectorizer, ENGLISH_STOP_WORDS
 
 # ───── PAGE CONFIG & GLOBAL CSS ─────
-st.set_page_config(page_title="Restaurant Finder", page_icon="🍽️", layout="wide")
+st.set_page_config(page_title="🍽️ Restaurant Finder", layout="wide")
 
 FOOD_BG = (
     "https://images.unsplash.com/photo-1552566626-52f8b828add9"
@@ -24,55 +24,63 @@ FOOD_BG = (
 
 st.markdown(f"""
 <style>
-/* Full-page food background */
+/* Background image + lighter overlay */
 html, body, .stApp {{
   background: url('{FOOD_BG}') no-repeat center center fixed;
   background-size: cover;
 }}
-
-/* Overlay to dim the bg for readability */
 .stApp::before {{
   content: "";
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(255,255,255,0.85);
+  background: rgba(255,255,255,0.6);
   z-index: -1;
 }}
 
-/* Sidebar “filter box” */
+/* Sidebar filter card */
 [data-testid="stSidebar"] > div:first-child {{
-  background: #fff;
+  backdrop-filter: blur(10px);
+  background: rgba(255,255,255,0.8);
   padding: 20px;
   border-radius: 12px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.1);
   margin: 16px;
 }}
 
-/* Filter labels */
-.stSidebar label {{
-  font-weight: 600;
-  margin-top: 12px;
+/* Filter input styling */
+.stSidebar select, .stSidebar .stSlider, .stSidebar .stMultiSelect {{
+  border-radius: 6px !important;
+  background: #fff !important;
 }}
 
-/* Badges for keywords */
+/* Headings */
+h1, h2, h3, h4, h5, h6 {{
+  color: #333;
+}}
+
+/* Badges */
 .badge {{
   display:inline-block;
   background:#ffb300;
   color:#fff;
-  border-radius:4px;
-  padding:4px 8px;
-  margin:4px 4px 4px 0;
-  font-size:0.85rem;
+  border-radius:12px;
+  padding:4px 10px;
+  margin:3px 3px 3px 0;
+  font-size:0.9rem;
 }}
 
-/* Review snippet cards */
+/* Review snippet card */
 .snippet-card {{
   background:#fff;
   border-left:4px solid #43a047;
-  padding:12px 16px;
-  margin:8px 0;
-  border-radius:6px;
-  box-shadow:0 1px 4px rgba(0,0,0,0.1);
+  padding:14px 18px;
+  margin:10px 0;
+  border-radius:8px;
+  box-shadow:0 2px 8px rgba(0,0,0,0.06);
+  transition:transform .2s;
+}}
+.snippet-card:hover {{
+  transform: translateY(-3px);
 }}
 
 /* Formatted address */
@@ -89,9 +97,9 @@ DATA_URL = "https://drive.google.com/uc?export=download&id=1iRWeGaDybybQ2eiTCyEg
 
 @st.cache_data
 def load_data(url: str) -> pd.DataFrame:
-    r = requests.get(url, timeout=60)
-    r.raise_for_status()
-    return pd.read_csv(BytesIO(r.content))
+    res = requests.get(url, timeout=60)
+    res.raise_for_status()
+    return pd.read_csv(BytesIO(res.content))
 
 df_raw = load_data(DATA_URL)
 
@@ -101,7 +109,7 @@ def train_model(df: pd.DataFrame) -> pd.DataFrame:
     df = df.dropna(subset=["google_rating","price","popularity","sentiment"])
     num_feats = ["price","popularity","sentiment"]
     cat_feats = ["category"]
-    X, y = df[num_feats + cat_feats], df["google_rating"]
+    X, y = df[num_feats+cat_feats], df["google_rating"]
 
     prep = ColumnTransformer([
         ("num", StandardScaler(), num_feats),
@@ -130,31 +138,27 @@ df = train_model(df_raw)
 # ───── FILTERS ─────
 st.sidebar.header("Filters")
 
-# City
 if "city" in df.columns:
     cities = ["All"] + sorted(df["city"].dropna().unique())
     city = st.sidebar.selectbox("City", cities)
     if city != "All":
         df = df[df["city"] == city]
 
-# ZIP code
 if "postal_code" in df.columns:
     zips = ["All"] + sorted(df["postal_code"].dropna().unique())
     zp = st.sidebar.selectbox("ZIP code", zips)
     if zp != "All":
         df = df[df["postal_code"] == zp]
 
-# Category
 if "category" in df.columns:
     cats = sorted(df["category"].dropna().unique())
     sel_cats = st.sidebar.multiselect("Category", cats)
     if sel_cats:
         df = df[df["category"].isin(sel_cats)]
 
-# Price level (1–10)
 pmin, pmax = 1, 10
-price_range = st.sidebar.slider("Price level", pmin, pmax, (pmin, pmax))
-df = df[df["price"].between(*price_range)]
+pr = st.sidebar.slider("Price level", pmin, pmax, (pmin, pmax))
+df = df[df["price"].between(pr[0], pr[1])]
 
 # ───── TOP 5 & METRICS ─────
 df = df.sort_values("predicted_rating", ascending=False)
@@ -170,30 +174,25 @@ c3.metric("Avg Sentiment", f"{df['sentiment'].mean():.2f}")
 names = [""] + list(top5["name"])
 sel = st.selectbox("Select a restaurant to inspect", names)
 if not sel:
-    st.info("Please select a restaurant.")
-    st.stop()
+    st.info("Please select a restaurant."); st.stop()
 r = top5[top5["name"] == sel].iloc[0]
 
 st.subheader(f"{sel}")
 st.metric("Predicted Rating", f"{r['predicted_rating']} ⭐")
 
-# Formatted address
 if "formatted_address" in r:
     st.markdown(f"<div class='address'>📍 {r['formatted_address']}</div>", unsafe_allow_html=True)
 
 # Map
-if {"latitude", "longitude"}.issubset(r.index):
+if {"latitude","longitude"}.issubset(r.index):
     view = pdk.ViewState(latitude=r["latitude"], longitude=r["longitude"], zoom=14)
     clr = [
-        int(255 * (1 - (r['predicted_rating'] - 1) / 4)),
-        int(120 + 135 * (r['predicted_rating'] - 1) / 4),
-        200, 180
+        int(255*(1-(r['predicted_rating']-1)/4)),
+        int(120+135*(r['predicted_rating']-1)/4), 200, 180
     ]
-    layer = pdk.Layer("ScatterplotLayer",
-                      data=pd.DataFrame([r]),
+    layer = pdk.Layer("ScatterplotLayer", data=pd.DataFrame([r]),
                       get_position='[longitude, latitude]',
-                      get_fill_color=clr,
-                      get_radius=100)
+                      get_fill_color=clr, get_radius=100)
     st.pydeck_chart(pdk.Deck(initial_view_state=view, layers=[layer]))
 else:
     st.error("Location data missing.")
@@ -203,9 +202,9 @@ st.subheader("Key Phrases from Reviews")
 raw = r.get("combined_reviews", "")
 if raw:
     docs = [s.strip() for s in re.split(r'\|\||\n', raw) if s.strip()]
-    extra = {"just", "really", "also", "will", "get", "one"}
-    stops = list(ENGLISH_STOP_WORDS.union(extra))
-    vect = TfidfVectorizer(stop_words=stops, ngram_range=(1,2), max_features=50)
+    extra = {"just","really","also","will","get","one"}
+    stop_list = list(ENGLISH_STOP_WORDS.union(extra))
+    vect = TfidfVectorizer(stop_words=stop_list, ngram_range=(1,2), max_features=50)
     X = vect.fit_transform(docs)
     scores = np.asarray(X.mean(axis=0)).ravel()
     terms = np.array(vect.get_feature_names_out())
