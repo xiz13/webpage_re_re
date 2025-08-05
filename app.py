@@ -74,7 +74,7 @@ def train_model(df):
     for m in models.values():
         pipe = Pipeline([("prep", prep),("reg", m)])
         pipe.fit(X,y)
-        rmse = mean_squared_error(y, pipe.predict(X), squared=False)
+        rmse = mean_squared_error(y, pipe.predict(X)) ** 0.5
         if rmse < best_rmse:
             best_rmse, best_pipe = rmse, pipe
     best_pipe.fit(X,y)
