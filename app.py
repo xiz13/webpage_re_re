@@ -40,7 +40,7 @@ html, body, .stApp {{
 /* Sidebar filter card */
 [data-testid="stSidebar"] > div:first-child {{
   backdrop-filter: blur(10px);
-  background: rgba(255,255,255,0.8);
+  background: rgba(255,255,255,0.4);
   padding: 20px;
   border-radius: 12px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.1);
