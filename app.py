@@ -12,7 +12,6 @@ from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.metrics import mean_squared_error
-from sklearn.model_selection import KFold
 from sklearn.feature_extraction.text import TfidfVectorizer, ENGLISH_STOP_WORDS
 
 # ───── PAGE CONFIG & GLOBAL CSS ─────
@@ -35,27 +34,19 @@ html, body, .stApp {{
   background: rgba(255,255,255,0.95); border-radius:12px;
   padding:2rem !important; box-shadow:0 4px 20px rgba(0,0,0,0.1);
 }}
-/* Sidebar banner */
-.sidebar-banner {{
-  text-align:center; margin-bottom:16px;
+.stSidebar label {{ font-weight:600; margin-top:12px; }}
+.badge {{
+  display:inline-block; background:#ffb300; color:#fff;
+  border-radius:12px; padding:4px 10px; margin:3px;
+  font-size:0.9rem;
 }}
-.sidebar-banner img {{
-  width:80px; border-radius:50%;
+.snippet-card {{
+  background:#fff; border-left:4px solid #43a047;
+  padding:14px 18px; margin:10px 0; border-radius:8px;
+  box-shadow:0 2px 8px rgba(0,0,0,0.06); transition:transform .2s;
 }}
-/* Expander cards */
-.stExpander > div {{
-  background:#fff; border-radius:8px; padding:12px;
-  margin-bottom:12px; box-shadow:0 2px 8px rgba(0,0,0,0.05);
-}}
-/* Expander summary icons */
-.stExpanderSummary {{
-  font-size:1rem !important; font-weight:600;
-}}
-/* Reset button */
-.reset-btn {{
-  width:100%; margin-top:16px; background:#43a047; color:#fff;
-  border:none; padding:10px; border-radius:8px; cursor:pointer;
-}}
+.snippet-card:hover {{ transform: translateY(-3px); }}
+.address {{ font-style:italic; color:#555; margin-bottom:12px; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -71,12 +62,12 @@ df_raw = load_data(DATA_URL)
 @st.cache_resource
 def train_model(df):
     df = df.dropna(subset=["google_rating","price","popularity","sentiment"])
-    num = ["price","popularity","sentiment"]
-    cat = ["category"]
-    X, y = df[num+cat], df["google_rating"]
+    num_feats = ["price","popularity","sentiment"]
+    cat_feats = ["category"]
+    X, y = df[num_feats+cat_feats], df["google_rating"]
     prep = ColumnTransformer([
-        ("num", StandardScaler(), num),
-        ("cat", OneHotEncoder(handle_unknown="ignore"), cat)
+        ("num", StandardScaler(), num_feats),
+        ("cat", OneHotEncoder(handle_unknown="ignore"), cat_feats),
     ])
     models = {
         "RF": RandomForestRegressor(n_estimators=150, random_state=42),
@@ -85,11 +76,11 @@ def train_model(df):
     best_rmse, best_pipe = np.inf, None
     for m in models.values():
         pipe = Pipeline([("prep", prep), ("reg", m)])
-        pipe.fit(X,y)
+        pipe.fit(X, y)
         rmse = mean_squared_error(y, pipe.predict(X)) ** 0.5
         if rmse < best_rmse:
             best_rmse, best_pipe = rmse, pipe
-    best_pipe.fit(X,y)
+    best_pipe.fit(X, y)
     df["predicted_rating"] = best_pipe.predict(X).round(1)
     return df
 
@@ -97,70 +88,62 @@ df = train_model(df_raw)
 
 # ───── BEAUTIFIED FILTERS ─────
 with st.sidebar:
-    # Banner
-    st.markdown('<div class="sidebar-banner">'
-                '<img src="https://img.icons8.com/emoji/96/000000/chef-emoji.png"/>'
-                '<h2>Filters</h2></div>',
-                unsafe_allow_html=True)
-
-    # Reset button
-    if st.button("🔄 Reset Filters", key="reset"):
+    # Reliable banner via Streamlit image
+    st.image("https://img.icons8.com/emoji/96/000000/chef-emoji.png", width=80)
+    st.header("Filters")
+    if st.button("🔄 Reset Filters"):
         st.session_state.clear()
 
-    # City Expander
     with st.expander("🌆 City"):
-        if "city" in df.columns:
-            cities = ["All"]+sorted(df["city"].dropna().unique())
+        if "city" in df:
+            cities = ["All"] + sorted(df["city"].dropna().unique())
             sel_city = st.selectbox("Select City", cities)
         else:
             sel_city = "All"
 
-    # ZIP Expander
     with st.expander("🏷️ ZIP Code"):
-        if "postal_code" in df.columns:
-            zips = ["All"]+sorted(df["postal_code"].dropna().unique())
+        if "postal_code" in df:
+            zips = ["All"] + sorted(df["postal_code"].dropna().unique())
             sel_zip = st.selectbox("Select ZIP", zips)
         else:
             sel_zip = "All"
 
-    # Category Expander
     with st.expander("📂 Category"):
-        if "category" in df.columns:
+        if "category" in df:
             cats = sorted(df["category"].dropna().unique())
-            sel_cats = st.multiselect("Choose Categories", cats)
+            sel_cats = st.multiselect("Select Categories", cats)
         else:
             sel_cats = []
 
-    # Price Expander
     with st.expander("💸 Price Level"):
-        pr = st.slider("Price (1–10)", 1, 10, (1,10))
+        pr = st.slider("Price (1–10)", 1, 10, (1, 10))
 
 # Apply filters
 df_f = df.copy()
 if sel_city != "All":
-    df_f = df_f[df_f["city"]==sel_city]
+    df_f = df_f[df_f["city"] == sel_city]
 if sel_zip != "All":
-    df_f = df_f[df_f["postal_code"]==sel_zip]
+    df_f = df_f[df_f["postal_code"] == sel_zip]
 if sel_cats:
     df_f = df_f[df_f["category"].isin(sel_cats)]
-df_f = df_f[df_f["price"].between(pr[0],pr[1])]
+df_f = df_f[df_f["price"].between(pr[0], pr[1])]
 
 # ───── TOP 5 & METRICS ─────
 df_f = df_f.sort_values("predicted_rating", ascending=False)
 top5 = df_f.head(5).reset_index(drop=True)
 
 st.title("🍴 Top 5 Restaurants by Predicted Rating")
-c1,c2,c3 = st.columns(3)
+c1, c2, c3 = st.columns(3)
 c1.metric("Matches", len(df_f))
 c2.metric("Avg Predicted Rating", f"{df_f['predicted_rating'].mean():.2f}")
 c3.metric("Avg Sentiment", f"{df_f['sentiment'].mean():.2f}")
 
 # ───── SELECT & DISPLAY ─────
-names = [""]+list(top5["name"])
+names = [""] + list(top5["name"])
 sel = st.selectbox("Select a restaurant", names)
 if not sel:
     st.info("Please select a restaurant."); st.stop()
-r = top5[top5["name"]==sel].iloc[0]
+r = top5[top5["name"] == sel].iloc[0]
 
 st.subheader(f"{sel}")
 st.metric("Predicted Rating", f"{r['predicted_rating']} ⭐")
@@ -184,7 +167,7 @@ else:
 
 # ───── KEY PHRASES ─────
 st.subheader("Key Phrases from Reviews")
-raw = r.get("combined_reviews","")
+raw = r.get("combined_reviews", "")
 if raw:
     docs = [s.strip() for s in re.split(r'\|\||\n', raw) if s.strip()]
     extra = {"just","really","also","will","get","one"}
