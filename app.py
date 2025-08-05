@@ -135,3 +135,90 @@ if "city" in df.columns:
     cities = ["All"] + sorted(df["city"].dropna().unique())
     city = st.sidebar.selectbox("City", cities)
     if city != "All":
+        df = df[df["city"] == city]
+
+# ZIP code
+if "postal_code" in df.columns:
+    zips = ["All"] + sorted(df["postal_code"].dropna().unique())
+    zp = st.sidebar.selectbox("ZIP code", zips)
+    if zp != "All":
+        df = df[df["postal_code"] == zp]
+
+# Category
+if "category" in df.columns:
+    cats = sorted(df["category"].dropna().unique())
+    sel_cats = st.sidebar.multiselect("Category", cats)
+    if sel_cats:
+        df = df[df["category"].isin(sel_cats)]
+
+# Price level (1–10)
+pmin, pmax = 1, 10
+price_range = st.sidebar.slider("Price level", pmin, pmax, (pmin, pmax))
+df = df[df["price"].between(*price_range)]
+
+# ───── TOP 5 & METRICS ─────
+df = df.sort_values("predicted_rating", ascending=False)
+top5 = df.head(5).reset_index(drop=True)
+
+st.title("🍴 Top 5 Restaurants by Predicted Rating")
+c1, c2, c3 = st.columns(3)
+c1.metric("Matches", len(df))
+c2.metric("Avg Predicted Rating", f"{df['predicted_rating'].mean():.2f}")
+c3.metric("Avg Sentiment", f"{df['sentiment'].mean():.2f}")
+
+# ───── SELECT & DISPLAY ─────
+names = [""] + list(top5["name"])
+sel = st.selectbox("Select a restaurant to inspect", names)
+if not sel:
+    st.info("Please select a restaurant.")
+    st.stop()
+r = top5[top5["name"] == sel].iloc[0]
+
+st.subheader(f"{sel}")
+st.metric("Predicted Rating", f"{r['predicted_rating']} ⭐")
+
+# Formatted address
+if "formatted_address" in r:
+    st.markdown(f"<div class='address'>📍 {r['formatted_address']}</div>", unsafe_allow_html=True)
+
+# Map
+if {"latitude", "longitude"}.issubset(r.index):
+    view = pdk.ViewState(latitude=r["latitude"], longitude=r["longitude"], zoom=14)
+    clr = [
+        int(255 * (1 - (r['predicted_rating'] - 1) / 4)),
+        int(120 + 135 * (r['predicted_rating'] - 1) / 4),
+        200, 180
+    ]
+    layer = pdk.Layer("ScatterplotLayer",
+                      data=pd.DataFrame([r]),
+                      get_position='[longitude, latitude]',
+                      get_fill_color=clr,
+                      get_radius=100)
+    st.pydeck_chart(pdk.Deck(initial_view_state=view, layers=[layer]))
+else:
+    st.error("Location data missing.")
+
+# ───── KEY PHRASES ─────
+st.subheader("Key Phrases from Reviews")
+raw = r.get("combined_reviews", "")
+if raw:
+    docs = [s.strip() for s in re.split(r'\|\||\n', raw) if s.strip()]
+    extra = {"just", "really", "also", "will", "get", "one"}
+    stops = list(ENGLISH_STOP_WORDS.union(extra))
+    vect = TfidfVectorizer(stop_words=stops, ngram_range=(1,2), max_features=50)
+    X = vect.fit_transform(docs)
+    scores = np.asarray(X.mean(axis=0)).ravel()
+    terms = np.array(vect.get_feature_names_out())
+    top_terms = terms[np.argsort(scores)[::-1][:8]]
+    badges = " ".join(f"<span class='badge'>{w}</span>" for w in top_terms)
+    st.markdown(badges, unsafe_allow_html=True)
+else:
+    st.info("No review text available.")
+
+# ───── SAMPLE REVIEW SNIPPETS ─────
+st.subheader("Sample Review Snippets")
+if raw:
+    for snippet in docs[:3]:
+        st.markdown(f"<div class='snippet-card'>“{snippet}”</div>", unsafe_allow_html=True)
+else:
+    st.info("No reviews to display.")
