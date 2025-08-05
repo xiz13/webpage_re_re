@@ -15,39 +15,25 @@ from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import KFold
 from sklearn.feature_extraction.text import TfidfVectorizer, ENGLISH_STOP_WORDS
 
-# ───── PAGE & GLOBAL CSS ─────
+# ───── PAGE & CSS ─────
 st.set_page_config("Restaurant Finder", "🍽️", layout="wide")
 st.markdown("""
 <style>
-/* Sidebar card */
 [data-testid="stSidebar"] > div:first-child {
-  background: #fff;
-  padding: 16px;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  background: #fff; padding:16px; border-radius:8px;
+  box-shadow:0 2px 8px rgba(0,0,0,0.05);
 }
-/* Filter labels */
-.stSidebar label {
-  font-weight: 600;
-  margin-top: 8px;
-}
-/* Badges */
-.badge {display:inline-block; background:#ffb300; color:#fff; border-radius:4px; padding:4px 8px; margin:4px 4px 4px 0; font-size:0.85rem;}
-/* Review snippet cards */
-.snippet-card {
-  background: #fff;
-  border-left: 4px solid #43a047;
-  padding: 12px 16px;
-  margin: 8px 0;
-  border-radius: 6px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
-}
-/* Formatted address */
+.stSidebar label { font-weight:600; margin-top:8px; }
+.badge {display:inline-block; background:#ffb300; color:#fff;
+       border-radius:4px; padding:4px 8px; margin:4px; font-size:0.85rem;}
+.snippet-card {background:#fff; border-left:4px solid #43a047;
+                padding:12px 16px; margin:8px 0; border-radius:6px;
+                box-shadow:0 1px 4px rgba(0,0,0,0.1);}
 .address {font-style:italic; color:#555; margin-bottom:12px;}
 </style>
 """, unsafe_allow_html=True)
 
-# ───── LOAD DATA ─────
+# ───── DATA LOAD ─────
 DATA_URL = "https://drive.google.com/uc?export=download&id=1iRWeGaDybybQ2eiTCyEgyXDYbH5FpFup"
 @st.cache_data
 def load_data(url: str) -> pd.DataFrame:
@@ -57,59 +43,59 @@ df_raw = load_data(DATA_URL)
 
 # ───── TRAIN MODEL ─────
 @st.cache_resource
-def train_model(df):
+def train_model(df: pd.DataFrame) -> pd.DataFrame:
     df = df.dropna(subset=["google_rating","price","popularity","sentiment"])
-    num = ["price","popularity","sentiment"]
-    cat = ["category"]
-    X, y = df[num+cat], df["google_rating"]
+    num_feats = ["price","popularity","sentiment"]
+    cat_feats = ["category"]
+    X, y = df[num_feats + cat_feats], df["google_rating"]
+
     prep = ColumnTransformer([
-        ("num", StandardScaler(), num),
-        ("cat", OneHotEncoder(handle_unknown="ignore"), cat)
+        ("num", StandardScaler(), num_feats),
+        ("cat", OneHotEncoder(handle_unknown="ignore"), cat_feats),
     ])
+
     models = {
         "RF": RandomForestRegressor(n_estimators=150, random_state=42),
         "GB": GradientBoostingRegressor(n_estimators=200, learning_rate=0.1, random_state=42),
     }
+
     best_rmse, best_pipe = np.inf, None
-    for m in models.values():
-        pipe = Pipeline([("prep", prep),("reg", m)])
-        pipe.fit(X,y)
-        rmse = mean_squared_error(y, pipe.predict(X)) ** 0.5
+    for model in models.values():
+        pipe = Pipeline([("prep", prep), ("reg", model)])
+        pipe.fit(X, y)
+        preds = pipe.predict(X)
+        rmse = mean_squared_error(y, preds) ** 0.5
         if rmse < best_rmse:
             best_rmse, best_pipe = rmse, pipe
-    best_pipe.fit(X,y)
+
+    best_pipe.fit(X, y)
     df["predicted_rating"] = best_pipe.predict(X).round(1)
     return df
 
 df = train_model(df_raw)
 
-# ───── FILTER SECTION ─────
+# ───── FILTERS ─────
 st.sidebar.header("Filters")
-
-# City
 if "city" in df.columns:
     cities = ["All"]+sorted(df["city"].dropna().unique())
     city = st.sidebar.selectbox("City", cities)
     if city!="All": df = df[df["city"]==city]
 
-# ZIP
 if "postal_code" in df.columns:
     zips = ["All"]+sorted(df["postal_code"].dropna().unique())
     zp = st.sidebar.selectbox("ZIP code", zips)
     if zp!="All": df = df[df["postal_code"]==zp]
 
-# Category
 if "category" in df.columns:
     cats = sorted(df["category"].dropna().unique())
     sel = st.sidebar.multiselect("Category", cats)
     if sel: df = df[df["category"].isin(sel)]
 
-# Price 1–10
 pmin,pmax=1,10
 pr = st.sidebar.slider("Price level", pmin, pmax, (pmin,pmax))
-df = df[df["price"].between(pr[0], pr[1])]
+df = df[df["price"].between(pr[0],pr[1])]
 
-# ───── TOP 5 CALC ─────
+# ───── TOP 5 & METRICS ─────
 df = df.sort_values("predicted_rating", ascending=False)
 top5 = df.head(5).reset_index(drop=True)
 
@@ -119,22 +105,20 @@ c1.metric("Matches", len(df))
 c2.metric("Avg Predicted Rating", f"{df['predicted_rating'].mean():.2f}")
 c3.metric("Avg Sentiment", f"{df['sentiment'].mean():.2f}")
 
-# ───── RESTAURANT SELECT ─────
-names = [""] + list(top5["name"])
+# ───── SELECT & DISPLAY ─────
+names = [""]+list(top5["name"])
 sel = st.selectbox("Select a restaurant to inspect", names)
 if not sel:
-    st.info("Please select a restaurant above."); st.stop()
+    st.info("Please select a restaurant."); st.stop()
 r = top5[top5["name"]==sel].iloc[0]
 
-# ───── DISPLAY PREDICTED RATING ─────
 st.subheader(f"{sel}")
 st.metric("Predicted Rating", f"{r['predicted_rating']} ⭐")
 
-# ───── FORMATTED ADDRESS ─────
 if "formatted_address" in r:
     st.markdown(f"<div class='address'>📍 {r['formatted_address']}</div>", unsafe_allow_html=True)
 
-# ───── MAP ─────
+# Map
 if {"latitude","longitude"}.issubset(r.index):
     view = pdk.ViewState(latitude=r["latitude"], longitude=r["longitude"], zoom=14)
     clr = [
@@ -148,16 +132,14 @@ if {"latitude","longitude"}.issubset(r.index):
 else:
     st.error("Location data missing.")
 
-# ───── KEY PHRASE EXTRACTION ─────
+# ───── KEY PHRASES ─────
 st.subheader("Key Phrases from Reviews")
 raw = r.get("combined_reviews","")
 if raw:
-    # split & clean
     docs = [s.strip() for s in re.split(r'\|\||\n', raw) if s.strip()]
-    # build extended stopwords
-    extra = {"just","really","also","will","get","one"}
-    stops = ENGLISH_STOP_WORDS.union(extra)
-    vect = TfidfVectorizer(stop_words=stops, ngram_range=(1,2), max_features=50)
+    extra_stops = {"just","really","also","will","get","one"}
+    stop_list = list(ENGLISH_STOP_WORDS.union(extra_stops))
+    vect = TfidfVectorizer(stop_words=stop_list, ngram_range=(1,2), max_features=50)
     X = vect.fit_transform(docs)
     scores = np.asarray(X.mean(axis=0)).ravel()
     terms = np.array(vect.get_feature_names_out())
@@ -167,8 +149,8 @@ if raw:
 else:
     st.info("No review text available.")
 
-# ───── SAMPLE REVIEW SNIPPETS ─────
-st.subheader("Sample Reviews")
+# ───── SAMPLE REVIEWS ─────
+st.subheader("Sample Review Snippets")
 if raw:
     for snippet in docs[:3]:
         st.markdown(f"<div class='snippet-card'>“{snippet}”</div>", unsafe_allow_html=True)
